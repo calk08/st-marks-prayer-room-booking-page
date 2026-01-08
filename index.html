@@ -10,6 +10,42 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <!-- EmailJS SDK -->
     <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+    
+    <!-- Firebase SDK -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+        import { getFirestore, collection, addDoc, getDocs, onSnapshot, query, orderBy, deleteDoc, doc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+        
+        // Firebase configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyA_SyzvhQgFLc5ZYBKKF0Qlwrh1EQ-EkIM",
+            authDomain: "st-marks-prayer-room-bookings.firebaseapp.com",
+            projectId: "st-marks-prayer-room-bookings",
+            storageBucket: "st-marks-prayer-room-bookings.firebasestorage.app",
+            messagingSenderId: "605aborwfr019016815",
+            appId: "1:605019016815:web:9eb66fcc7e7ad9a0d9b7e1"
+        };
+        
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        
+        // Make Firebase functions globally available
+        window.firebaseDB = db;
+        window.firebaseCollection = collection;
+        window.firebaseAddDoc = addDoc;
+        window.firebaseGetDocs = getDocs;
+        window.firebaseOnSnapshot = onSnapshot;
+        window.firebaseQuery = query;
+        window.firebaseOrderBy = orderBy;
+        window.firebaseDeleteDoc = deleteDoc;
+        window.firebaseDoc = doc;
+        window.firebaseReady = true;
+        
+        // Dispatch event when Firebase is ready
+        window.dispatchEvent(new Event('firebase-ready'));
+        console.log('Firebase initialized successfully');
+    </script>
 </head>
 <body>
     <!-- Header -->

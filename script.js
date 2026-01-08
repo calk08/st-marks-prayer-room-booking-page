@@ -6,7 +6,22 @@ document.addEventListener('DOMContentLoaded', function() {
     initCookieBanner();
     initSmoothScrolling();
     initHeaderScroll();
-    initCalendar();
+    
+    // Wait for Firebase to be ready before initializing calendar
+    if (window.firebaseReady) {
+        initCalendar();
+    } else {
+        window.addEventListener('firebase-ready', () => {
+            initCalendar();
+        });
+        // Fallback: if Firebase doesn't load in 3 seconds, use localStorage
+        setTimeout(() => {
+            if (!window.firebaseReady) {
+                console.warn('Firebase not ready, using localStorage fallback');
+                initCalendar();
+            }
+        }, 3000);
+    }
 });
 
 // ===== CALENDAR BOOKING SYSTEM =====
@@ -17,15 +32,57 @@ let selectedSlot = null;
 const openingHour = 8;
 const closingHour = 21;
 
-// Bookings storage - loaded from localStorage or JSON file
+// Bookings storage - loaded from Firestore or localStorage
 let bookedSlots = [];
 
-// Storage key for localStorage
+// Storage key for localStorage (fallback)
 const BOOKINGS_STORAGE_KEY = 'furnace_prayer_room_bookings';
 
-// Load bookings from localStorage or initialize from JSON
+// Firestore collection name
+const FIRESTORE_COLLECTION = 'bookings';
+
+// Real-time listener unsubscribe function
+let unsubscribeFirestore = null;
+
+// Load bookings from Firestore with real-time updates
 async function loadBookings() {
-    // First try to load from localStorage
+    // Check if Firebase is available
+    if (window.firebaseReady && window.firebaseDB) {
+        try {
+            const bookingsRef = window.firebaseCollection(window.firebaseDB, FIRESTORE_COLLECTION);
+            const q = window.firebaseQuery(bookingsRef, window.firebaseOrderBy('createdAt', 'desc'));
+            
+            // Set up real-time listener
+            unsubscribeFirestore = window.firebaseOnSnapshot(q, (snapshot) => {
+                bookedSlots = [];
+                snapshot.forEach((doc) => {
+                    bookedSlots.push({ id: doc.id, ...doc.data() });
+                });
+                console.log('Bookings synced from Firestore:', bookedSlots.length, 'bookings');
+                
+                // Also save to localStorage as cache
+                saveBookingsToLocalStorage();
+                
+                // Re-render calendar with updated bookings
+                renderCalendar();
+            }, (error) => {
+                console.error('Firestore listener error:', error);
+                // Fallback to localStorage
+                loadFromLocalStorage();
+            });
+            
+            return;
+        } catch (e) {
+            console.error('Error setting up Firestore:', e);
+        }
+    }
+    
+    // Fallback to localStorage
+    loadFromLocalStorage();
+}
+
+// Load from localStorage (fallback)
+function loadFromLocalStorage() {
     const storedBookings = localStorage.getItem(BOOKINGS_STORAGE_KEY);
     
     if (storedBookings) {
@@ -39,13 +96,17 @@ async function loadBookings() {
     }
     
     // If no localStorage data, try to load from JSON file
+    loadFromJsonFile();
+}
+
+// Load from JSON file (initial data)
+async function loadFromJsonFile() {
     try {
         const response = await fetch('bookings.json');
         if (response.ok) {
             const data = await response.json();
             bookedSlots = data.bookings || [];
-            // Save to localStorage for future use
-            saveBookingsToStorage();
+            saveBookingsToLocalStorage();
             console.log('Bookings loaded from JSON file:', bookedSlots.length, 'bookings');
         }
     } catch (e) {
@@ -54,14 +115,36 @@ async function loadBookings() {
     }
 }
 
-// Save bookings to localStorage
-function saveBookingsToStorage() {
+// Save booking to Firestore
+async function saveBookingToFirestore(booking) {
+    if (window.firebaseReady && window.firebaseDB) {
+        try {
+            const bookingsRef = window.firebaseCollection(window.firebaseDB, FIRESTORE_COLLECTION);
+            const docRef = await window.firebaseAddDoc(bookingsRef, booking);
+            console.log('Booking saved to Firestore with ID:', docRef.id);
+            return docRef.id;
+        } catch (e) {
+            console.error('Error saving to Firestore:', e);
+            throw e;
+        }
+    }
+    throw new Error('Firebase not available');
+}
+
+// Save bookings to localStorage (cache/fallback)
+function saveBookingsToLocalStorage() {
     try {
         localStorage.setItem(BOOKINGS_STORAGE_KEY, JSON.stringify(bookedSlots));
-        console.log('Bookings saved to localStorage');
     } catch (e) {
-        console.error('Error saving bookings:', e);
+        console.error('Error saving to localStorage:', e);
     }
+}
+
+// Save bookings to storage (called after new booking)
+function saveBookingsToStorage() {
+    // Save to localStorage as backup
+    saveBookingsToLocalStorage();
+    // Note: Firestore save is handled separately in handleBookingSubmit
 }
 
 // Generate unique ID for bookings
@@ -356,7 +439,6 @@ async function handleBookingSubmit(e) {
     
     // Create new booking object with all details
     const newBooking = {
-        id: generateBookingId(),
         date: selectedSlot.date,
         time: selectedSlot.time,
         name: name,
@@ -373,13 +455,27 @@ async function handleBookingSubmit(e) {
     submitBtn.textContent = 'Processing...';
     submitBtn.disabled = true;
     
-    // Add to bookings array
-    bookedSlots.push(newBooking);
-    
-    // Save to localStorage
-    saveBookingsToStorage();
-    
-    console.log('Booking created:', newBooking);
+    try {
+        // Try to save to Firestore first
+        if (window.firebaseReady && window.firebaseDB) {
+            const firestoreId = await saveBookingToFirestore(newBooking);
+            newBooking.id = firestoreId;
+            console.log('Booking saved to Firestore:', newBooking);
+        } else {
+            // Fallback to local storage only
+            newBooking.id = generateBookingId();
+            bookedSlots.push(newBooking);
+            saveBookingsToStorage();
+            console.log('Booking saved to localStorage:', newBooking);
+        }
+    } catch (error) {
+        console.error('Error saving booking:', error);
+        // Fallback to local storage
+        newBooking.id = generateBookingId();
+        bookedSlots.push(newBooking);
+        saveBookingsToStorage();
+        console.log('Fallback: Booking saved to localStorage:', newBooking);
+    }
     
     // Send confirmation email
     const emailSent = await sendConfirmationEmail(newBooking);
@@ -408,8 +504,11 @@ async function handleBookingSubmit(e) {
         </div>
     `;
     
-    // Re-render calendar to show the new booking
-    renderCalendar();
+    // Re-render calendar to show the new booking (only needed for localStorage fallback)
+    // Firestore real-time listener will auto-update
+    if (!window.firebaseReady) {
+        renderCalendar();
+    }
 }
 
 // Cookie Banner Management
