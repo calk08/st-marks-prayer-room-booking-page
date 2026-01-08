@@ -75,24 +75,28 @@ function generateAccessCode() {
 }
 
 // EmailJS Configuration - Replace with your actual credentials
-const EMAILJS_PUBLIC_KEY = '4n8zIP7jHqIUF6kLM'; // Replace with your EmailJS public key
+const EMAILJS_PUBLIC_KEY = '4n8zIP7jHqlUF6kLM'; // Replace with your EmailJS public key
 const EMAILJS_SERVICE_ID = 'service_6ogxkdt'; // Replace with your EmailJS service ID
 const EMAILJS_TEMPLATE_ID = 'template_k5skv7n'; // Replace with your EmailJS template ID
 
 // Initialize EmailJS
 function initEmailJS() {
     if (typeof emailjs !== 'undefined') {
-        emailjs.init(EMAILJS_PUBLIC_KEY);
-        console.log('EmailJS initialized');
+        emailjs.init({
+            publicKey: EMAILJS_PUBLIC_KEY
+        });
+        console.log('EmailJS initialized with public key:', EMAILJS_PUBLIC_KEY);
     } else {
-        console.warn('EmailJS not loaded');
+        console.error('EmailJS SDK not loaded - check if script is included in HTML');
     }
 }
 
 // Send booking confirmation email
 async function sendConfirmationEmail(booking) {
+    console.log('Attempting to send email to:', booking.email);
+    
     if (typeof emailjs === 'undefined') {
-        console.warn('EmailJS not available, skipping email');
+        console.error('EmailJS not available - SDK not loaded');
         return false;
     }
     
@@ -110,16 +114,19 @@ async function sendConfirmationEmail(booking) {
         reply_to: 'thomas.hart@stmarkscoventry.org'
     };
     
+    console.log('Email template params:', templateParams);
+    
     try {
         const response = await emailjs.send(
             EMAILJS_SERVICE_ID,
             EMAILJS_TEMPLATE_ID,
             templateParams
         );
-        console.log('Email sent successfully:', response);
+        console.log('Email sent successfully! Response:', response);
         return true;
     } catch (error) {
-        console.error('Failed to send email:', error);
+        console.error('Failed to send email. Error:', error);
+        console.error('Error details:', JSON.stringify(error, null, 2));
         return false;
     }
 }
