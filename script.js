@@ -2,6 +2,7 @@
 
 document.addEventListener('DOMContentLoaded', function() {
     // Initialize components
+    initEmailJS();
     initCookieBanner();
     initSmoothScrolling();
     initHeaderScroll();
@@ -66,6 +67,71 @@ function saveBookingsToStorage() {
 // Generate unique ID for bookings
 function generateBookingId() {
     return Date.now().toString(36) + Math.random().toString(36).substr(2);
+}
+
+// Generate 4-digit access code
+function generateAccessCode() {
+    return Math.floor(1000 + Math.random() * 9000).toString();
+}
+
+// EmailJS Configuration - Replace with your actual credentials
+const EMAILJS_PUBLIC_KEY = '4n8zIP7jHqIUF6kLM'; // Replace with your EmailJS public key
+const EMAILJS_SERVICE_ID = 'service_6ogxkdt'; // Replace with your EmailJS service ID
+const EMAILJS_TEMPLATE_ID = 'template_k5skv7n'; // Replace with your EmailJS template ID
+
+// Initialize EmailJS
+function initEmailJS() {
+    if (typeof emailjs !== 'undefined') {
+        emailjs.init(EMAILJS_PUBLIC_KEY);
+        console.log('EmailJS initialized');
+    } else {
+        console.warn('EmailJS not loaded');
+    }
+}
+
+// Send booking confirmation email
+async function sendConfirmationEmail(booking) {
+    if (typeof emailjs === 'undefined') {
+        console.warn('EmailJS not available, skipping email');
+        return false;
+    }
+    
+    const templateParams = {
+        to_name: booking.name,
+        to_email: booking.email,
+        access_code: booking.accessCode,
+        booking_date: new Date(booking.date).toLocaleDateString('en-GB', {
+            weekday: 'long',
+            day: 'numeric',
+            month: 'long',
+            year: 'numeric'
+        }),
+        booking_time: formatTimeDisplay(booking.time),
+        reply_to: 'thomas.hart@stmarkscoventry.org'
+    };
+    
+    try {
+        const response = await emailjs.send(
+            EMAILJS_SERVICE_ID,
+            EMAILJS_TEMPLATE_ID,
+            templateParams
+        );
+        console.log('Email sent successfully:', response);
+        return true;
+    } catch (error) {
+        console.error('Failed to send email:', error);
+        return false;
+    }
+}
+
+// Format time for display (e.g., "14:00" -> "2:00 PM")
+function formatTimeDisplay(timeStr) {
+    const hour = parseInt(timeStr.split(':')[0]);
+    const displayHour = hour > 12 ? hour - 12 : hour;
+    const ampm = hour >= 12 ? 'PM' : 'AM';
+    const endHour = hour + 1 > 12 ? hour + 1 - 12 : hour + 1;
+    const endAmpm = (hour + 1) >= 12 ? 'PM' : 'AM';
+    return `${displayHour}:00 ${ampm} - ${endHour}:00 ${endAmpm}`;
 }
 
 function getMonday(date) {
@@ -269,7 +335,7 @@ function closeBookingModal() {
     selectedSlot = null;
 }
 
-function handleBookingSubmit(e) {
+async function handleBookingSubmit(e) {
     e.preventDefault();
     
     if (!selectedSlot) return;
@@ -277,6 +343,9 @@ function handleBookingSubmit(e) {
     const name = document.getElementById('booking-name').value;
     const email = document.getElementById('booking-email').value;
     const phone = document.getElementById('booking-phone').value;
+    
+    // Generate 4-digit access code
+    const accessCode = generateAccessCode();
     
     // Create new booking object with all details
     const newBooking = {
@@ -286,8 +355,16 @@ function handleBookingSubmit(e) {
         name: name,
         email: email,
         phone: phone || '',
+        accessCode: accessCode,
         createdAt: new Date().toISOString()
     };
+    
+    // Show loading state
+    const modal = document.getElementById('booking-confirm-modal');
+    const submitBtn = modal.querySelector('button[type="submit"]');
+    const originalBtnText = submitBtn.textContent;
+    submitBtn.textContent = 'Processing...';
+    submitBtn.disabled = true;
     
     // Add to bookings array
     bookedSlots.push(newBooking);
@@ -297,17 +374,29 @@ function handleBookingSubmit(e) {
     
     console.log('Booking created:', newBooking);
     
+    // Send confirmation email
+    const emailSent = await sendConfirmationEmail(newBooking);
+    
     // Show success message
-    const modal = document.getElementById('booking-confirm-modal');
     modal.querySelector('.modal-content').innerHTML = `
         <div style="text-align: center; padding: 20px;">
             <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom: 16px;">
                 <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
                 <polyline points="22 4 12 14.01 9 11.01"></polyline>
             </svg>
-            <h3 style="margin-bottom: 12px; color: #10b981;">Booking Request Sent!</h3>
+            <h3 style="margin-bottom: 12px; color: #10b981;">Booking Confirmed!</h3>
             <p style="color: #6b7280; margin-bottom: 8px;">Thank you, ${name}!</p>
-            <p style="color: #6b7280; margin-bottom: 20px;">A confirmation email will be sent to <strong>${email}</strong> with your 4-digit access code once your booking is processed (Tues-Thurs).</p>
+            <div style="background: #f3f4f6; padding: 16px; border-radius: 8px; margin-bottom: 16px;">
+                <p style="color: #6b7280; margin-bottom: 8px;">Your access code is:</p>
+                <p style="font-size: 2rem; font-weight: 700; color: #4f46e5; letter-spacing: 8px;">${accessCode}</p>
+            </div>
+            <p style="color: #6b7280; margin-bottom: 8px; font-size: 0.875rem;">
+                ${emailSent 
+                    ? `A confirmation email has been sent to <strong>${email}</strong>` 
+                    : `Please save this code - you'll need it to access the prayer room.`
+                }
+            </p>
+            <p style="color: #9ca3af; font-size: 0.75rem; margin-bottom: 20px;">Use this code on the door keypad to enter.</p>
             <button class="modal-btn" onclick="location.reload()">Close</button>
         </div>
     `;
