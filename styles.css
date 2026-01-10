@@ -941,6 +941,21 @@ a:hover {
     cursor: not-allowed;
 }
 
+/* User's own booking - different color and clickable */
+.calendar-slot.my-booking {
+    background: #bfdbfe;
+    cursor: pointer;
+    border: 2px solid #3b82f6;
+}
+
+.calendar-slot.my-booking:hover {
+    background: #93c5fd;
+}
+
+.calendar-slot.my-booking .slot-name {
+    color: #1e40af;
+}
+
 .calendar-slot .slot-name {
     position: absolute;
     top: 2px;

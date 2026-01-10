@@ -39,8 +39,47 @@ let bookedSlots = [];
 // Storage key for localStorage (fallback)
 const BOOKINGS_STORAGE_KEY = 'furnace_prayer_room_bookings';
 
+// Storage key for user's own bookings (to identify which ones they can cancel)
+const MY_BOOKINGS_STORAGE_KEY = 'furnace_my_bookings';
+
+// User's own bookings (stored locally)
+let myBookings = [];
+
 // Firestore collection name
 const FIRESTORE_COLLECTION = 'bookings';
+
+// Load user's own bookings from localStorage
+function loadMyBookings() {
+    try {
+        const stored = localStorage.getItem(MY_BOOKINGS_STORAGE_KEY);
+        if (stored) {
+            myBookings = JSON.parse(stored);
+            console.log('My bookings loaded:', myBookings.length);
+        }
+    } catch (e) {
+        console.error('Error loading my bookings:', e);
+        myBookings = [];
+    }
+}
+
+// Save user's own bookings to localStorage
+function saveMyBookings() {
+    try {
+        localStorage.setItem(MY_BOOKINGS_STORAGE_KEY, JSON.stringify(myBookings));
+    } catch (e) {
+        console.error('Error saving my bookings:', e);
+    }
+}
+
+// Check if a booking belongs to the current user
+function isMyBooking(bookingId) {
+    return myBookings.some(b => b.id === bookingId);
+}
+
+// Get my booking by date and time
+function getMyBookingBySlot(date, time) {
+    return myBookings.find(b => b.date === date && b.time === time);
+}
 
 // Real-time listener unsubscribe function
 let unsubscribeFirestore = null;
@@ -241,6 +280,9 @@ function getMonthYear(date) {
 }
 
 async function initCalendar() {
+    // Load user's own bookings from localStorage
+    loadMyBookings();
+    
     // Load bookings first, then render
     await loadBookings();
     renderCalendar();
@@ -339,14 +381,29 @@ function renderCalendar() {
                 const booking = getBookingForSlot(dateStr, timeStr);
                 slotCell.classList.add('booked');
                 
+                // Check if this is the user's own booking
+                const myBooking = getMyBookingBySlot(dateStr, timeStr);
+                const isOwn = myBooking && booking && myBooking.id === booking.id;
+                
+                if (isOwn) {
+                    slotCell.classList.add('my-booking');
+                }
+                
                 // Display first name on the slot
                 if (booking && booking.name) {
                     const firstName = booking.name.split(' ')[0];
                     const nameLabel = document.createElement('span');
                     nameLabel.className = 'slot-name';
-                    nameLabel.textContent = firstName;
+                    nameLabel.textContent = isOwn ? `${firstName} (You)` : firstName;
                     slotCell.appendChild(nameLabel);
-                    slotCell.title = `Booked by ${booking.name}`;
+                    
+                    if (isOwn) {
+                        slotCell.title = 'Click to cancel your booking';
+                        slotCell.style.cursor = 'pointer';
+                        slotCell.addEventListener('click', () => showCancelModal(booking, myBooking));
+                    } else {
+                        slotCell.title = `Booked by ${booking.name}`;
+                    }
                 } else {
                     slotCell.title = 'This slot is already booked';
                 }
@@ -425,6 +482,97 @@ function closeBookingModal() {
     selectedSlot = null;
 }
 
+// Show cancel booking modal
+function showCancelModal(booking, myBooking) {
+    const modal = document.getElementById('booking-confirm-modal');
+    
+    const bookingDate = new Date(booking.date).toLocaleDateString('en-GB', {
+        weekday: 'long',
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric'
+    });
+    
+    const hour = parseInt(booking.time.split(':')[0]);
+    const displayHour = hour > 12 ? hour - 12 : hour;
+    const ampm = hour >= 12 ? 'PM' : 'AM';
+    
+    modal.querySelector('.modal-content').innerHTML = `
+        <button class="modal-close" onclick="closeBookingModal()" aria-label="Close">&times;</button>
+        <h2>Cancel Booking?</h2>
+        <div id="booking-details">
+            <p><strong>Prayer Room 1hr</strong></p>
+            <p>${bookingDate}</p>
+            <p class="slot-time">${displayHour}:00 ${ampm}</p>
+            <p style="margin-top: 10px; color: #6b7280;">Booked by: ${booking.name}</p>
+        </div>
+        <p style="margin: 20px 0; color: #dc2626;">Are you sure you want to cancel this booking?</p>
+        <div style="display: flex; gap: 12px; justify-content: center;">
+            <button class="modal-btn" style="background: #6b7280;" onclick="closeBookingModal()">Keep Booking</button>
+            <button class="modal-btn" style="background: #dc2626;" onclick="confirmCancelBooking('${booking.id}')">Cancel Booking</button>
+        </div>
+    `;
+    
+    modal.classList.add('active');
+    document.body.style.overflow = 'hidden';
+}
+
+// Confirm and execute booking cancellation
+async function confirmCancelBooking(bookingId) {
+    const modal = document.getElementById('booking-confirm-modal');
+    
+    // Show loading
+    modal.querySelector('.modal-content').innerHTML = `
+        <div style="text-align: center; padding: 40px;">
+            <p style="color: #6b7280;">Cancelling booking...</p>
+        </div>
+    `;
+    
+    try {
+        // Delete from Firestore
+        if (window.firebaseReady && window.firebaseDB) {
+            const docRef = window.firebaseDoc(window.firebaseDB, FIRESTORE_COLLECTION, bookingId);
+            await window.firebaseDeleteDoc(docRef);
+            console.log('Booking deleted from Firestore:', bookingId);
+        }
+        
+        // Remove from myBookings
+        myBookings = myBookings.filter(b => b.id !== bookingId);
+        saveMyBookings();
+        
+        // Remove from local bookedSlots
+        bookedSlots = bookedSlots.filter(b => b.id !== bookingId);
+        saveBookingsToStorage();
+        
+        // Show success
+        modal.querySelector('.modal-content').innerHTML = `
+            <div style="text-align: center; padding: 20px;">
+                <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom: 16px;">
+                    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                    <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                </svg>
+                <h3 style="margin-bottom: 12px; color: #10b981;">Booking Cancelled</h3>
+                <p style="color: #6b7280; margin-bottom: 20px;">Your booking has been successfully cancelled.</p>
+                <button class="modal-btn" onclick="closeBookingModal(); renderCalendar();">Close</button>
+            </div>
+        `;
+    } catch (error) {
+        console.error('Error cancelling booking:', error);
+        modal.querySelector('.modal-content').innerHTML = `
+            <div style="text-align: center; padding: 20px;">
+                <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#dc2626" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom: 16px;">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="15" y1="9" x2="9" y2="15"></line>
+                    <line x1="9" y1="9" x2="15" y2="15"></line>
+                </svg>
+                <h3 style="margin-bottom: 12px; color: #dc2626;">Error</h3>
+                <p style="color: #6b7280; margin-bottom: 20px;">Failed to cancel booking. Please try again.</p>
+                <button class="modal-btn" onclick="closeBookingModal()">Close</button>
+            </div>
+        `;
+    }
+}
+
 async function handleBookingSubmit(e) {
     e.preventDefault();
     
@@ -467,12 +615,32 @@ async function handleBookingSubmit(e) {
         if (window.firebaseReady && window.firebaseDB) {
             const firestoreId = await saveBookingToFirestore(firestoreBooking);
             newBooking.id = firestoreId;
+            
+            // Save to myBookings so user can cancel later
+            myBookings.push({
+                id: firestoreId,
+                date: newBooking.date,
+                time: newBooking.time,
+                name: newBooking.name
+            });
+            saveMyBookings();
+            
             console.log('Booking saved to Firestore:', firestoreBooking);
         } else {
             // Fallback to local storage only
             newBooking.id = generateBookingId();
             bookedSlots.push(newBooking);
             saveBookingsToStorage();
+            
+            // Save to myBookings
+            myBookings.push({
+                id: newBooking.id,
+                date: newBooking.date,
+                time: newBooking.time,
+                name: newBooking.name
+            });
+            saveMyBookings();
+            
             console.log('Booking saved to localStorage:', newBooking);
         }
     } catch (error) {
@@ -481,6 +649,16 @@ async function handleBookingSubmit(e) {
         newBooking.id = generateBookingId();
         bookedSlots.push(newBooking);
         saveBookingsToStorage();
+        
+        // Save to myBookings
+        myBookings.push({
+            id: newBooking.id,
+            date: newBooking.date,
+            time: newBooking.time,
+            name: newBooking.name
+        });
+        saveMyBookings();
+        
         console.log('Fallback: Booking saved to localStorage:', newBooking);
     }
     
