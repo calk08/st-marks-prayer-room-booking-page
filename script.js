@@ -6,6 +6,7 @@ document.addEventListener('DOMContentLoaded', function() {
     initCookieBanner();
     initSmoothScrolling();
     initHeaderScroll();
+    initMobileNav();
     
     // Wait for Firebase to be ready before initializing calendar
     if (window.firebaseReady) {
@@ -679,10 +680,33 @@ document.querySelectorAll('.section').forEach(section => {
     observer.observe(section);
 });
 
-// Mobile Navigation Toggle (for future enhancement)
-function toggleMobileNav() {
+// Mobile Navigation Toggle
+function initMobileNav() {
+    const mobileMenuBtn = document.getElementById('mobile-menu-btn');
     const navMenu = document.querySelector('.nav-menu');
-    navMenu.classList.toggle('active');
+    
+    if (mobileMenuBtn && navMenu) {
+        mobileMenuBtn.addEventListener('click', function() {
+            this.classList.toggle('active');
+            navMenu.classList.toggle('active');
+        });
+        
+        // Close menu when clicking a nav link
+        navMenu.querySelectorAll('.nav-link').forEach(link => {
+            link.addEventListener('click', () => {
+                mobileMenuBtn.classList.remove('active');
+                navMenu.classList.remove('active');
+            });
+        });
+        
+        // Close menu when clicking outside
+        document.addEventListener('click', (e) => {
+            if (!mobileMenuBtn.contains(e.target) && !navMenu.contains(e.target)) {
+                mobileMenuBtn.classList.remove('active');
+                navMenu.classList.remove('active');
+            }
+        });
+    }
 }
 
 // Utility: Format Time
