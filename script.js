@@ -50,10 +50,9 @@ async function loadBookings() {
     if (window.firebaseReady && window.firebaseDB) {
         try {
             const bookingsRef = window.firebaseCollection(window.firebaseDB, FIRESTORE_COLLECTION);
-            const q = window.firebaseQuery(bookingsRef, window.firebaseOrderBy('createdAt', 'desc'));
             
-            // Set up real-time listener
-            unsubscribeFirestore = window.firebaseOnSnapshot(q, (snapshot) => {
+            // Set up real-time listener (no ordering since we only store name, date, time)
+            unsubscribeFirestore = window.firebaseOnSnapshot(bookingsRef, (snapshot) => {
                 bookedSlots = [];
                 snapshot.forEach((doc) => {
                     bookedSlots.push({ id: doc.id, ...doc.data() });
