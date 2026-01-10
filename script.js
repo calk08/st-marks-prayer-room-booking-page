@@ -437,7 +437,14 @@ async function handleBookingSubmit(e) {
     // Generate 4-digit access code
     const accessCode = generateAccessCode();
     
-    // Create new booking object with all details
+    // Create booking object for Firestore (only name and time)
+    const firestoreBooking = {
+        date: selectedSlot.date,
+        time: selectedSlot.time,
+        name: name
+    };
+    
+    // Full booking object for local use (email, access code, etc.)
     const newBooking = {
         date: selectedSlot.date,
         time: selectedSlot.time,
@@ -456,11 +463,11 @@ async function handleBookingSubmit(e) {
     submitBtn.disabled = true;
     
     try {
-        // Try to save to Firestore first
+        // Try to save to Firestore first (only name and time)
         if (window.firebaseReady && window.firebaseDB) {
-            const firestoreId = await saveBookingToFirestore(newBooking);
+            const firestoreId = await saveBookingToFirestore(firestoreBooking);
             newBooking.id = firestoreId;
-            console.log('Booking saved to Firestore:', newBooking);
+            console.log('Booking saved to Firestore:', firestoreBooking);
         } else {
             // Fallback to local storage only
             newBooking.id = generateBookingId();
