@@ -14,7 +14,7 @@
     <!-- Firebase SDK -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-        import { getFirestore, collection, addDoc, getDocs, onSnapshot, query, orderBy, deleteDoc, doc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+        import { getFirestore, collection, addDoc, getDocs, onSnapshot, query, orderBy, deleteDoc, doc, updateDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
         
         // Firebase configuration
         const firebaseConfig = {
@@ -40,6 +40,7 @@
         window.firebaseOrderBy = orderBy;
         window.firebaseDeleteDoc = deleteDoc;
         window.firebaseDoc = doc;
+        window.firebaseUpdateDoc = updateDoc;
         window.firebaseReady = true;
         
         // Dispatch event when Firebase is ready
@@ -120,6 +121,7 @@
                 <div class="calendar-key">
                     <div class="key-item"><span class="key-available"></span> Available</div>
                     <div class="key-item"><span class="key-booked"></span> Booked</div>
+                    <div class="key-item"><span class="key-class"></span> Class (Join)</div>
                     <div class="key-item"><span class="key-unavailable"></span> Unavailable</div>
                 </div>
                 
@@ -280,13 +282,44 @@
     <!-- Booking Confirmation Modal -->
     <div id="booking-confirm-modal" class="modal">
         <div class="modal-content booking-modal">
+            <button class="modal-close" onclick="closeBookingModal()" aria-label="Close">&times;</button>
             <h3>Confirm Your Booking</h3>
             <div id="booking-details"></div>
             <form id="booking-form">
-                <div class="form-group">
-                    <label for="booking-name">Your Name</label>
-                    <input type="text" id="booking-name" required placeholder="Enter your full name">
+                <!-- Class Toggle -->
+                <div class="form-group class-toggle">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="is-class-booking" onchange="toggleClassFields()">
+                        <span class="checkmark"></span>
+                        <span>This is a class/group session (others can join)</span>
+                    </label>
                 </div>
+                
+                <!-- Regular booking fields -->
+                <div id="regular-booking-fields">
+                    <div class="form-group">
+                        <label for="booking-name">Your Name</label>
+                        <input type="text" id="booking-name" placeholder="Enter your full name">
+                    </div>
+                </div>
+                
+                <!-- Class booking fields (hidden by default) -->
+                <div id="class-booking-fields" style="display: none;">
+                    <div class="form-group">
+                        <label for="class-name">Class/Group Name</label>
+                        <input type="text" id="class-name" placeholder="e.g., Morning Prayer Group">
+                    </div>
+                    <div class="form-group">
+                        <label for="host-name">Your Name (Host)</label>
+                        <input type="text" id="host-name" placeholder="Enter your full name">
+                    </div>
+                    <div class="form-group">
+                        <label for="max-participants">Maximum Participants</label>
+                        <input type="number" id="max-participants" min="2" max="20" value="8" placeholder="8">
+                        <span class="field-hint">Recommended: max 8 people for comfortable space</span>
+                    </div>
+                </div>
+                
                 <div class="form-group">
                     <label for="booking-email">Email Address</label>
                     <input type="email" id="booking-email" required placeholder="Enter your email">
@@ -299,6 +332,25 @@
                 <div class="modal-buttons">
                     <button type="button" class="modal-btn-secondary" onclick="closeBookingModal()">Cancel</button>
                     <button type="submit" class="modal-btn">Confirm Booking</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <!-- Join Class Modal -->
+    <div id="join-class-modal" class="modal">
+        <div class="modal-content booking-modal">
+            <button class="modal-close" onclick="closeJoinModal()" aria-label="Close">&times;</button>
+            <h3>Join Class</h3>
+            <div id="join-class-details"></div>
+            <form id="join-class-form">
+                <div class="form-group">
+                    <label for="join-name">Your Name</label>
+                    <input type="text" id="join-name" required placeholder="Enter your full name">
+                </div>
+                <div class="modal-buttons">
+                    <button type="button" class="modal-btn-secondary" onclick="closeJoinModal()">Cancel</button>
+                    <button type="submit" class="modal-btn">Join Class</button>
                 </div>
             </form>
         </div>

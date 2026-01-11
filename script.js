@@ -299,6 +299,9 @@ async function initCalendar() {
 
     // Booking form submission
     document.getElementById('booking-form').addEventListener('submit', handleBookingSubmit);
+    
+    // Join class form submission
+    document.getElementById('join-class-form').addEventListener('submit', handleJoinClass);
 }
 
 function renderCalendar() {
@@ -379,33 +382,67 @@ function renderCalendar() {
             // Check if booked
             else if (isSlotBooked(dateStr, timeStr)) {
                 const booking = getBookingForSlot(dateStr, timeStr);
-                slotCell.classList.add('booked');
                 
-                // Check if this is the user's own booking
-                const myBooking = getMyBookingBySlot(dateStr, timeStr);
-                const isOwn = myBooking && booking && myBooking.id === booking.id;
-                
-                if (isOwn) {
-                    slotCell.classList.add('my-booking');
-                }
-                
-                // Display first name on the slot
-                if (booking && booking.name) {
-                    const firstName = booking.name.split(' ')[0];
+                // Check if this is a class booking
+                if (booking && booking.isClass) {
+                    slotCell.classList.add('class-booking');
+                    
+                    const myBooking = getMyBookingBySlot(dateStr, timeStr);
+                    const isOwn = myBooking && myBooking.id === booking.id;
+                    const isFull = booking.participantCount >= booking.maxParticipants;
+                    
+                    // Display class name and participant count
                     const nameLabel = document.createElement('span');
                     nameLabel.className = 'slot-name';
-                    nameLabel.textContent = isOwn ? `${firstName} (You)` : firstName;
+                    nameLabel.textContent = booking.className;
                     slotCell.appendChild(nameLabel);
                     
+                    const countLabel = document.createElement('span');
+                    countLabel.className = 'slot-count';
+                    countLabel.textContent = `${booking.participantCount}/${booking.maxParticipants}`;
+                    slotCell.appendChild(countLabel);
+                    
                     if (isOwn) {
-                        slotCell.title = 'Click to cancel your booking';
-                        slotCell.style.cursor = 'pointer';
+                        slotCell.classList.add('my-booking');
+                        slotCell.title = 'Click to manage your class';
                         slotCell.addEventListener('click', () => showCancelModal(booking, myBooking));
+                    } else if (isFull) {
+                        slotCell.classList.add('class-full');
+                        slotCell.title = 'This class is full';
                     } else {
-                        slotCell.title = `Booked by ${booking.name}`;
+                        slotCell.title = `Click to join "${booking.className}" (${booking.participantCount}/${booking.maxParticipants})`;
+                        slotCell.addEventListener('click', () => showJoinClassModal(booking));
                     }
                 } else {
-                    slotCell.title = 'This slot is already booked';
+                    // Regular booking
+                    slotCell.classList.add('booked');
+                    
+                    // Check if this is the user's own booking
+                    const myBooking = getMyBookingBySlot(dateStr, timeStr);
+                    const isOwn = myBooking && booking && myBooking.id === booking.id;
+                    
+                    if (isOwn) {
+                        slotCell.classList.add('my-booking');
+                    }
+                    
+                    // Display first name on the slot
+                    if (booking && booking.name) {
+                        const firstName = booking.name.split(' ')[0];
+                        const nameLabel = document.createElement('span');
+                        nameLabel.className = 'slot-name';
+                        nameLabel.textContent = isOwn ? `${firstName} (You)` : firstName;
+                        slotCell.appendChild(nameLabel);
+                        
+                        if (isOwn) {
+                            slotCell.title = 'Click to cancel your booking';
+                            slotCell.style.cursor = 'pointer';
+                            slotCell.addEventListener('click', () => showCancelModal(booking, myBooking));
+                        } else {
+                            slotCell.title = `Booked by ${booking.name}`;
+                        }
+                    } else {
+                        slotCell.title = 'This slot is already booked';
+                    }
                 }
             } 
             // Available
@@ -447,6 +484,9 @@ function showBookingModal(day, hour) {
     const modal = document.getElementById('booking-confirm-modal');
     const details = document.getElementById('booking-details');
     
+    // Reset form to default state
+    resetBookingForm();
+    
     const displayHour = hour > 12 ? hour - 12 : hour;
     const ampm = hour >= 12 ? 'PM' : 'AM';
     const endHour = hour + 1 > 12 ? hour + 1 - 12 : hour + 1;
@@ -467,6 +507,36 @@ function showBookingModal(day, hour) {
     
     modal.classList.add('active');
     document.body.style.overflow = 'hidden';
+}
+
+// Reset booking form to default state
+function resetBookingForm() {
+    const isClassCheckbox = document.getElementById('is-class-booking');
+    const regularFields = document.getElementById('regular-booking-fields');
+    const classFields = document.getElementById('class-booking-fields');
+    
+    if (isClassCheckbox) isClassCheckbox.checked = false;
+    if (regularFields) regularFields.style.display = 'block';
+    if (classFields) classFields.style.display = 'none';
+    
+    // Clear form inputs
+    const form = document.getElementById('booking-form');
+    if (form) form.reset();
+}
+
+// Toggle class fields visibility
+function toggleClassFields() {
+    const isClass = document.getElementById('is-class-booking').checked;
+    const regularFields = document.getElementById('regular-booking-fields');
+    const classFields = document.getElementById('class-booking-fields');
+    
+    if (isClass) {
+        regularFields.style.display = 'none';
+        classFields.style.display = 'block';
+    } else {
+        regularFields.style.display = 'block';
+        classFields.style.display = 'none';
+    }
 }
 
 function closeBookingModal() {
@@ -573,35 +643,199 @@ async function confirmCancelBooking(bookingId) {
     }
 }
 
+// Show join class modal
+function showJoinClassModal(booking) {
+    const modal = document.getElementById('join-class-modal');
+    const details = document.getElementById('join-class-details');
+    
+    const bookingDate = new Date(booking.date).toLocaleDateString('en-GB', {
+        weekday: 'long',
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric'
+    });
+    
+    const hour = parseInt(booking.time.split(':')[0]);
+    const displayHour = hour > 12 ? hour - 12 : hour;
+    const ampm = hour >= 12 ? 'PM' : 'AM';
+    
+    details.innerHTML = `
+        <div style="background: #dbeafe; padding: 16px; border-radius: 8px; margin-bottom: 16px;">
+            <p style="font-weight: 600; color: #1e40af; font-size: 1.1rem;">${booking.className}</p>
+            <p style="color: #3b82f6; font-size: 0.9rem;">Hosted by ${booking.hostName}</p>
+        </div>
+        <p><strong>${bookingDate}</strong></p>
+        <p class="slot-time">${displayHour}:00 ${ampm}</p>
+        <p style="margin-top: 12px; color: #6b7280;">
+            Participants: <strong>${booking.participantCount}/${booking.maxParticipants}</strong>
+        </p>
+    `;
+    
+    // Store booking ID for form submission
+    document.getElementById('join-class-form').dataset.bookingId = booking.id;
+    
+    modal.classList.add('active');
+    document.body.style.overflow = 'hidden';
+}
+
+// Close join class modal
+function closeJoinModal() {
+    const modal = document.getElementById('join-class-modal');
+    modal.classList.remove('active');
+    document.body.style.overflow = '';
+    document.getElementById('join-class-form').reset();
+}
+
+// Handle join class form submission
+async function handleJoinClass(e) {
+    e.preventDefault();
+    
+    const form = e.target;
+    const bookingId = form.dataset.bookingId;
+    const joinName = document.getElementById('join-name').value;
+    
+    if (!joinName || !bookingId) return;
+    
+    const modal = document.getElementById('join-class-modal');
+    const submitBtn = modal.querySelector('button[type="submit"]');
+    submitBtn.textContent = 'Joining...';
+    submitBtn.disabled = true;
+    
+    try {
+        // Get current booking from Firestore
+        if (window.firebaseReady && window.firebaseDB) {
+            const booking = bookedSlots.find(b => b.id === bookingId);
+            
+            if (!booking || !booking.isClass) {
+                throw new Error('Booking not found');
+            }
+            
+            if (booking.participantCount >= booking.maxParticipants) {
+                throw new Error('Class is full');
+            }
+            
+            // Update booking with new participant
+            const updatedParticipants = [...(booking.participants || []), joinName];
+            const updatedCount = updatedParticipants.length;
+            
+            // Update in Firestore
+            const docRef = window.firebaseDoc(window.firebaseDB, FIRESTORE_COLLECTION, bookingId);
+            await window.firebaseUpdateDoc(docRef, {
+                participants: updatedParticipants,
+                participantCount: updatedCount
+            });
+            
+            console.log('Joined class:', bookingId);
+            
+            // Show success
+            modal.querySelector('.modal-content').innerHTML = `
+                <div style="text-align: center; padding: 20px;">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom: 16px;">
+                        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                        <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                    </svg>
+                    <h3 style="margin-bottom: 12px; color: #10b981;">You've Joined!</h3>
+                    <p style="color: #6b7280; margin-bottom: 8px;">Welcome, ${joinName}!</p>
+                    <p style="color: #6b7280; margin-bottom: 20px;">You've successfully joined the class. The host will receive your details.</p>
+                    <button class="modal-btn" onclick="closeJoinModal(); renderCalendar();">Close</button>
+                </div>
+            `;
+        }
+    } catch (error) {
+        console.error('Error joining class:', error);
+        modal.querySelector('.modal-content').innerHTML = `
+            <div style="text-align: center; padding: 20px;">
+                <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#dc2626" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom: 16px;">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="15" y1="9" x2="9" y2="15"></line>
+                    <line x1="9" y1="9" x2="15" y2="15"></line>
+                </svg>
+                <h3 style="margin-bottom: 12px; color: #dc2626;">Error</h3>
+                <p style="color: #6b7280; margin-bottom: 20px;">${error.message || 'Failed to join class. Please try again.'}</p>
+                <button class="modal-btn" onclick="closeJoinModal()">Close</button>
+            </div>
+        `;
+    }
+}
+
 async function handleBookingSubmit(e) {
     e.preventDefault();
     
     if (!selectedSlot) return;
     
-    const name = document.getElementById('booking-name').value;
+    const isClassBooking = document.getElementById('is-class-booking').checked;
     const email = document.getElementById('booking-email').value;
     const phone = document.getElementById('booking-phone').value;
     
     // Generate 4-digit access code
     const accessCode = generateAccessCode();
     
-    // Create booking object for Firestore (only name and time)
-    const firestoreBooking = {
-        date: selectedSlot.date,
-        time: selectedSlot.time,
-        name: name
-    };
+    let firestoreBooking, newBooking, displayName;
     
-    // Full booking object for local use (email, access code, etc.)
-    const newBooking = {
-        date: selectedSlot.date,
-        time: selectedSlot.time,
-        name: name,
-        email: email,
-        phone: phone || '',
-        accessCode: accessCode,
-        createdAt: new Date().toISOString()
-    };
+    if (isClassBooking) {
+        // Class booking
+        const className = document.getElementById('class-name').value;
+        const hostName = document.getElementById('host-name').value;
+        const maxParticipants = parseInt(document.getElementById('max-participants').value) || 8;
+        
+        if (!className || !hostName) {
+            alert('Please fill in all required fields');
+            return;
+        }
+        
+        displayName = hostName;
+        
+        // Create class booking object for Firestore
+        firestoreBooking = {
+            date: selectedSlot.date,
+            time: selectedSlot.time,
+            isClass: true,
+            className: className,
+            hostName: hostName,
+            hostEmail: email,
+            maxParticipants: maxParticipants,
+            participants: [hostName], // Host is first participant
+            participantCount: 1
+        };
+        
+        // Full booking object for local use
+        newBooking = {
+            ...firestoreBooking,
+            phone: phone || '',
+            accessCode: accessCode,
+            createdAt: new Date().toISOString()
+        };
+    } else {
+        // Regular booking
+        const name = document.getElementById('booking-name').value;
+        
+        if (!name) {
+            alert('Please enter your name');
+            return;
+        }
+        
+        displayName = name;
+        
+        // Create booking object for Firestore (only name and time)
+        firestoreBooking = {
+            date: selectedSlot.date,
+            time: selectedSlot.time,
+            name: name,
+            isClass: false
+        };
+        
+        // Full booking object for local use (email, access code, etc.)
+        newBooking = {
+            date: selectedSlot.date,
+            time: selectedSlot.time,
+            name: name,
+            isClass: false,
+            email: email,
+            phone: phone || '',
+            accessCode: accessCode,
+            createdAt: new Date().toISOString()
+        };
+    }
     
     // Show loading state
     const modal = document.getElementById('booking-confirm-modal');
@@ -611,7 +845,7 @@ async function handleBookingSubmit(e) {
     submitBtn.disabled = true;
     
     try {
-        // Try to save to Firestore first (only name and time)
+        // Try to save to Firestore first
         if (window.firebaseReady && window.firebaseDB) {
             const firestoreId = await saveBookingToFirestore(firestoreBooking);
             newBooking.id = firestoreId;
@@ -621,7 +855,8 @@ async function handleBookingSubmit(e) {
                 id: firestoreId,
                 date: newBooking.date,
                 time: newBooking.time,
-                name: newBooking.name
+                name: isClassBooking ? newBooking.className : newBooking.name,
+                isClass: isClassBooking
             });
             saveMyBookings();
             
@@ -637,7 +872,8 @@ async function handleBookingSubmit(e) {
                 id: newBooking.id,
                 date: newBooking.date,
                 time: newBooking.time,
-                name: newBooking.name
+                name: isClassBooking ? newBooking.className : newBooking.name,
+                isClass: isClassBooking
             });
             saveMyBookings();
             
@@ -655,7 +891,8 @@ async function handleBookingSubmit(e) {
             id: newBooking.id,
             date: newBooking.date,
             time: newBooking.time,
-            name: newBooking.name
+            name: isClassBooking ? newBooking.className : newBooking.name,
+            isClass: isClassBooking
         });
         saveMyBookings();
         
@@ -666,14 +903,19 @@ async function handleBookingSubmit(e) {
     const emailSent = await sendConfirmationEmail(newBooking);
     
     // Show success message
+    const successTitle = isClassBooking ? 'Class Created!' : 'Booking Confirmed!';
+    const successMessage = isClassBooking 
+        ? `Your class "${newBooking.className}" has been created. Others can now join!`
+        : `Thank you, ${displayName}!`;
+    
     modal.querySelector('.modal-content').innerHTML = `
         <div style="text-align: center; padding: 20px;">
             <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom: 16px;">
                 <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
                 <polyline points="22 4 12 14.01 9 11.01"></polyline>
             </svg>
-            <h3 style="margin-bottom: 12px; color: #10b981;">Booking Confirmed!</h3>
-            <p style="color: #6b7280; margin-bottom: 8px;">Thank you, ${name}!</p>
+            <h3 style="margin-bottom: 12px; color: #10b981;">${successTitle}</h3>
+            <p style="color: #6b7280; margin-bottom: 8px;">${successMessage}</p>
             <div style="background: #f3f4f6; padding: 16px; border-radius: 8px; margin-bottom: 16px;">
                 <p style="color: #6b7280; margin-bottom: 8px;">Your access code is:</p>
                 <p style="font-size: 2rem; font-weight: 700; color: #4f46e5; letter-spacing: 8px;">${accessCode}</p>
