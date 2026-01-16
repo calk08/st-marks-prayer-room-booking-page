@@ -1,5 +1,32 @@
 // The Furnace Prayer Room - Booking Page JavaScript
 
+// ===== BOOKING MODE CONFIGURATION =====
+// Set to 'manual' or 'automatic'
+// 
+// MANUAL MODE:
+//   - Sends email via EmailJS with booking details and door code
+//   - Admin manually processes bookings and creates Net2 credentials
+//   - TODO: Add admin account functionality to remove bookings
+//
+// AUTOMATIC MODE:
+//   - Frontend only writes booking to Firestore
+//   - Cloud Function triggers on booking create/update/cancel
+//   - Cloud Function calls INLET API → Paxton Net2
+//   - Credential details written back to Firestore
+//   - Email/SMS sent via Firebase Trigger Email extension
+//   - Requires: Firebase Blaze plan, INLET setup, Net2 Local API configured
+//
+const BOOKING_MODE = 'manual'; // Change to 'automatic' when INLET integration is ready
+
+// ===== ADMIN CONFIGURATION =====
+// TODO: Implement admin authentication to allow booking removal
+// Admin emails (for future admin panel access)
+const ADMIN_EMAILS = [
+    'thomas.hart@stmarkscoventry.org',
+    'calebkennedy747@gmail.com',
+    'Phil.Atkinson@stmarkscoventry.org'
+];
+
 document.addEventListener('DOMContentLoaded', function() {
     // Initialize components
     initEmailJS();
@@ -844,6 +871,23 @@ async function handleBookingSubmit(e) {
     submitBtn.textContent = 'Processing...';
     submitBtn.disabled = true;
     
+    // Add mode-specific fields to Firestore booking
+    if (BOOKING_MODE === 'automatic') {
+        // AUTOMATIC MODE: Add fields for Cloud Function processing
+        firestoreBooking.status = 'pending'; // Cloud Function will update to 'confirmed'
+        firestoreBooking.resourceId = 'prayer_room'; // Maps to INLET/Net2 door
+        firestoreBooking.email = email;
+        firestoreBooking.phone = phone || '';
+        firestoreBooking.createdAt = new Date().toISOString();
+        // Cloud Function will add: inlet: { credentialId, code, issuedAt }
+    } else {
+        // MANUAL MODE: Include access code for email
+        firestoreBooking.accessCode = accessCode;
+        firestoreBooking.status = 'pending_manual'; // Admin needs to process
+        firestoreBooking.email = email;
+        firestoreBooking.createdAt = new Date().toISOString();
+    }
+    
     try {
         // Try to save to Firestore first
         if (window.firebaseReady && window.firebaseDB) {
@@ -899,23 +943,16 @@ async function handleBookingSubmit(e) {
         console.log('Fallback: Booking saved to localStorage:', newBooking);
     }
     
-    // Send confirmation email
-    const emailSent = await sendConfirmationEmail(newBooking);
+    // Handle confirmation based on mode
+    let emailSent = false;
+    let successMessage = '';
+    let accessCodeDisplay = '';
     
-    // Show success message
-    const successTitle = isClassBooking ? 'Class Created!' : 'Booking Confirmed!';
-    const successMessage = isClassBooking 
-        ? `Your class "${newBooking.className}" has been created. Others can now join!`
-        : `Thank you, ${displayName}!`;
-    
-    modal.querySelector('.modal-content').innerHTML = `
-        <div style="text-align: center; padding: 20px;">
-            <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom: 16px;">
-                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
-                <polyline points="22 4 12 14.01 9 11.01"></polyline>
-            </svg>
-            <h3 style="margin-bottom: 12px; color: #10b981;">${successTitle}</h3>
-            <p style="color: #6b7280; margin-bottom: 8px;">${successMessage}</p>
+    if (BOOKING_MODE === 'manual') {
+        // MANUAL MODE: Send email with access code via EmailJS
+        emailSent = await sendManualBookingEmail(newBooking);
+        
+        accessCodeDisplay = `
             <div style="background: #f3f4f6; padding: 16px; border-radius: 8px; margin-bottom: 16px;">
                 <p style="color: #6b7280; margin-bottom: 8px;">Your access code is:</p>
                 <p style="font-size: 2rem; font-weight: 700; color: #4f46e5; letter-spacing: 8px;">${accessCode}</p>
@@ -927,6 +964,38 @@ async function handleBookingSubmit(e) {
                 }
             </p>
             <p style="color: #9ca3af; font-size: 0.75rem; margin-bottom: 20px;">Use this code on the door keypad to enter.</p>
+        `;
+    } else {
+        // AUTOMATIC MODE: Cloud Function will handle credential creation and email
+        accessCodeDisplay = `
+            <div style="background: #dbeafe; padding: 16px; border-radius: 8px; margin-bottom: 16px;">
+                <p style="color: #1e40af; margin-bottom: 8px;">🔄 Processing your booking...</p>
+                <p style="color: #3b82f6; font-size: 0.875rem;">Your access credentials are being created automatically.</p>
+            </div>
+            <p style="color: #6b7280; margin-bottom: 8px; font-size: 0.875rem;">
+                You will receive an email at <strong>${email}</strong> with your access details shortly.
+            </p>
+            <p style="color: #9ca3af; font-size: 0.75rem; margin-bottom: 20px;">
+                The system will automatically configure door access for your booking time.
+            </p>
+        `;
+    }
+    
+    // Show success message
+    const successTitle = isClassBooking ? 'Class Created!' : 'Booking Confirmed!';
+    const mainMessage = isClassBooking 
+        ? `Your class "${newBooking.className}" has been created. Others can now join!`
+        : `Thank you, ${displayName}!`;
+    
+    modal.querySelector('.modal-content').innerHTML = `
+        <div style="text-align: center; padding: 20px;">
+            <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom: 16px;">
+                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                <polyline points="22 4 12 14.01 9 11.01"></polyline>
+            </svg>
+            <h3 style="margin-bottom: 12px; color: #10b981;">${successTitle}</h3>
+            <p style="color: #6b7280; margin-bottom: 8px;">${mainMessage}</p>
+            ${accessCodeDisplay}
             <button class="modal-btn" onclick="location.reload()">Close</button>
         </div>
     `;
@@ -935,6 +1004,55 @@ async function handleBookingSubmit(e) {
     // Firestore real-time listener will auto-update
     if (!window.firebaseReady) {
         renderCalendar();
+    }
+}
+
+// ===== MANUAL MODE EMAIL FUNCTION =====
+// Sends booking details to admin for manual processing
+async function sendManualBookingEmail(booking) {
+    console.log('MANUAL MODE: Sending booking email for manual processing');
+    
+    if (typeof emailjs === 'undefined') {
+        console.error('EmailJS not available - SDK not loaded');
+        return false;
+    }
+    
+    const bookingDate = new Date(booking.date).toLocaleDateString('en-GB', {
+        weekday: 'long',
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric'
+    });
+    
+    const templateParams = {
+        to_name: booking.name || booking.hostName,
+        to_email: booking.email || booking.hostEmail,
+        access_code: booking.accessCode,
+        booking_date: bookingDate,
+        booking_time: formatTimeDisplay(booking.time),
+        booking_type: booking.isClass ? `Class: ${booking.className}` : 'Individual Booking',
+        reply_to: ADMIN_EMAILS[0] || 'thomas.hart@stmarkscoventry.org'
+    };
+    
+    console.log('Manual booking email params:', templateParams);
+    
+    try {
+        // Send confirmation to user
+        const response = await emailjs.send(
+            EMAILJS_SERVICE_ID,
+            EMAILJS_TEMPLATE_ID,
+            templateParams
+        );
+        console.log('User confirmation email sent:', response);
+        
+        // Also send notification to admin for manual Net2 processing
+        // TODO: Create separate admin notification template
+        // This would include: booking details, user info, and reminder to create Net2 credential
+        
+        return true;
+    } catch (error) {
+        console.error('Failed to send manual booking email:', error);
+        return false;
     }
 }
 
